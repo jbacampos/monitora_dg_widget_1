@@ -8,7 +8,7 @@
     width: 100%;
     height: 100%;
     box-sizing: border-box;
-    padding: 18px 22px;
+    padding: 0 22px 18px;
     background: #292c32;
     color: #eeeeee;
     font-family: Inter, Arial, sans-serif;
@@ -25,7 +25,11 @@
     font-weight: 700;
     letter-spacing: 1.5px;
     color: #f0f0f0;
-    margin-bottom: 20px;
+    /* Margens automáticas dividem o espaço livre igualmente acima e abaixo
+       do título, centralizando-o entre o topo do card e os LEDs em
+       qualquer altura do card. */
+    margin-top: auto;
+    margin-bottom: auto;
 }
 
 .states {
@@ -144,6 +148,7 @@
     .title {
         font-size: 16px;
         line-height: 20px;
+        margin-top: 0;
         margin-bottom: 16px;
     }
 
