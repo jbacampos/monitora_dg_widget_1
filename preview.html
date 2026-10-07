@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitora_DG — preview local</title>
+<style>
+html,body{margin:0;min-height:100%;background:#202328;color:#eee;font-family:Inter,Arial,sans-serif}
+body{padding:20px;box-sizing:border-box}
+.preview-header{margin:0 0 10px;font-size:13px;color:#c8ccd1}
+#widget{width:min(100%,560px);height:270px;margin:auto}
+</style>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="preview-header">Monitora_DG — preview local (dados simulados)</div>
+<div id="widget"></div>
+<script>
+const container = document.getElementById('widget');
+window.container = container;
+
+const fixedTs = Date.parse('2026-10-07T06:40:00-03:00');
+const lastAlive = Math.floor(fixedTs / 1000) - 17;
+
+const data = [
+    {dataKey:{type:'timeseries',name:'rede_disponivel'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,'1']]},
+    {dataKey:{type:'timeseries',name:'alimentacao_rede'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,'1']]},
+    {dataKey:{type:'timeseries',name:'alimentacao_offgrid'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,'0']]},
+    {dataKey:{type:'timeseries',name:'alimentacao_gerador'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,'0']]},
+    {dataKey:{type:'attribute',name:'last_alive'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,lastAlive]]},
+    {dataKey:{type:'attribute',name:'uptime_s'}, datasource:{entityFilter:{singleEntity:{id:'7e62cc00-c0df-11f1-8ef7-dd61fc2d324e'}}}, data:[[fixedTs,'8345']]}
+];
+
+const subscription = {
+    data,
+    id: 'preview-subscription'
+};
+
+const ctx = {
+    subscriptionApi: {
+        createSubscription: () => ({
+            subscribe: fn => {
+                fn(subscription);
+                return {unsubscribe(){}};
+            }
+        })
+    },
+    registerDestroyCallback: fn => {
+        window.addEventListener('beforeunload', fn);
+    }
+};
+
+fetch('index.html')
+    .then(r => r.text())
+    .then(html => {
+        container.innerHTML = html;
+        const s = document.createElement('script');
+        s.src = 'script.js';
+        document.body.appendChild(s);
+    });
+</script>
+</body>
+</html>
