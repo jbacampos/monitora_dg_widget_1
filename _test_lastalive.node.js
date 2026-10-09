@@ -2,7 +2,8 @@
 // HARNESS DE TESTE (Node) — não faz parte do widget.
 // Carrega script.js em sandbox com globais simulados e valida
 // o cálculo de "Atualizado há" (menor tempo entre last_alive e
-// última publicação).
+// última publicação) e as leituras ambientais de temperatura e
+// umidade.
 // ============================================================
 
 const fs = require("fs");
@@ -15,15 +16,21 @@ const scriptSrc = fs.readFileSync(
 );
 
 const ID = "7e62cc00-c0df-11f1-8ef7-dd61fc2d324e";
+const ID_AMBIENTE = "b78d9b20-a309-11f1-b723-7b68e13f2590";
 
-function item(name, type, ts, value) {
+function item(name, type, ts, value, deviceId = ID) {
     return {
         dataKey: { name, type },
         datasource: {
-            entityFilter: { singleEntity: { id: ID } }
+            entityFilter: { singleEntity: { id: deviceId } }
         },
         data: [[ts, value]]
     };
+}
+
+// Item de telemetria do dispositivo ambiental (temperatura/umidade).
+function envItem(name, ts, value) {
+    return item(name, "timeseries", ts, value, ID_AMBIENTE);
 }
 
 // Constrói o ambiente simulando container/ctx/Date/setInterval.
@@ -37,7 +44,13 @@ function createEnv(startNow) {
         ledRede: { id: "ledRede", textContent: null, className: "led off" },
         ledRedeAlim: { id: "ledRedeAlim", textContent: null, className: "led off" },
         ledOffgrid: { id: "ledOffgrid", textContent: null, className: "led off" },
-        ledGerador: { id: "ledGerador", textContent: null, className: "led off" }
+        ledGerador: { id: "ledGerador", textContent: null, className: "led off" },
+        // Seção ambiental, com os valores iniciais de index.html.
+        envTempInt: { id: "envTempInt", textContent: "—", className: "env-temp" },
+        envTempExt: { id: "envTempExt", textContent: "—", className: "env-temp" },
+        envHumidInt: { id: "envHumidInt", textContent: "—", className: "env-humid" },
+        envHumidExt: { id: "envHumidExt", textContent: "—", className: "env-humid" },
+        envUpdated: { id: "envUpdated", textContent: "Temp/umid atualizadas há —", className: "env-updated" }
     };
 
     const container = {
@@ -92,6 +105,7 @@ function createEnv(startNow) {
             elements.lastAlive ? elements.lastAlive.textContent : undefined,
         uptimeText: () =>
             elements.uptime ? elements.uptime.textContent : undefined,
+        envText: id => (elements[id] ? elements[id].textContent : undefined),
         ledClass: id => (elements[id] || {}).className,
         fire: data => onDataUpdated({ data }),
         tick: newNow => {
@@ -257,6 +271,122 @@ const BASE = 1700000000000; // ms
     check("9) led rede verde", env.ledClass("ledRede"), "led green");
     check("9) led offgrid off", env.ledClass("ledOffgrid"), "led off");
     check("9) uptime inalterado", env.uptimeText(), "—");
+}
+
+// ============================================================
+// LEITURAS AMBIENTAIS (TEMPERATURA / UMIDADE)
+// ============================================================
+
+// Teste 10 — quatro leituras válidas: formato e idade do mais recente.
+{
+    const now = BASE + 49000;
+    const env = createEnv(now);
+    env.fire([
+        envItem("intTemp", BASE - 8000, "23.47"),
+        envItem("intHumid", BASE - 8000, "51.6"),
+        envItem("extTemp", BASE, "14.2"),
+        envItem("extHumid", BASE, "78.3")
+    ]);
+    check("10) temp interna (1 casa)", env.envText("envTempInt"), "23.5 °C");
+    check("10) umid interna (sem casas)", env.envText("envHumidInt"), "52 %");
+    check("10) temp externa", env.envText("envTempExt"), "14.2 °C");
+    check("10) umid externa", env.envText("envHumidExt"), "78 %");
+    check("10) idade pelo mais recente", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 49s");
+}
+
+// Teste 11 — valores ausentes/inválidos viram "—".
+{
+    const now = BASE + 10000;
+    const env = createEnv(now);
+    env.fire([
+        envItem("intTemp", BASE, "23.4"),
+        envItem("intHumid", BASE, ""),
+        envItem("extTemp", BASE, "x"),
+        envItem("extHumid", BASE, null)
+    ]);
+    check("11) temp interna válida", env.envText("envTempInt"), "23.4 °C");
+    check("11) umid interna vazia", env.envText("envHumidInt"), "—");
+    check("11) temp externa inválida", env.envText("envTempExt"), "—");
+    check("11) umid externa nula", env.envText("envHumidExt"), "—");
+    check("11) idade com uma leitura", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 10s");
+}
+
+// Teste 12 — nenhuma leitura ambiental recebida.
+{
+    const now = BASE + 1000;
+    const env = createEnv(now);
+    env.fire([item("rede_disponivel", "timeseries", BASE, "1")]);
+    check("12) temp interna ausente", env.envText("envTempInt"), "—");
+    check("12) umid externa ausente", env.envText("envHumidExt"), "—");
+    check("12) idade sem timestamps", env.envText("envUpdated"),
+        "Temp/umid atualizadas há —");
+}
+
+// Teste 13 — timestamps inválidos não geram horário de atualização.
+{
+    const now = BASE + 1000;
+    const env = createEnv(now);
+    env.fire([
+        envItem("intTemp", "x", "23.4"),
+        envItem("intHumid", 0, "50"),
+        envItem("extTemp", null, "14.2"),
+        envItem("extHumid", undefined, "78")
+    ]);
+    check("13) valores exibidos", env.envText("envTempInt"), "23.4 °C");
+    check("13) idade sem ts válido", env.envText("envUpdated"),
+        "Temp/umid atualizadas há —");
+}
+
+// Teste 14 — contador avança 1s a 1s sem nova consulta.
+{
+    const now = BASE + 20000;
+    const env = createEnv(now);
+    env.fire([envItem("intTemp", BASE, "23.4")]);
+    check("14) idade t+0", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 20s");
+    env.tick(now + 1000);
+    check("14) idade t+1", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 21s");
+    env.tick(now + 2000);
+    check("14) idade t+2", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 22s");
+    check("14) createSubscription 1x", env.createCount(), 1);
+}
+
+// Teste 15 — uma leitura deixa de ser publicada: idade segue a mais recente.
+{
+    const now = BASE;
+    const env = createEnv(now);
+    env.fire([
+        envItem("intTemp", BASE - 5000, "23.4"),
+        envItem("intHumid", BASE - 30000, "50"),
+        envItem("extTemp", BASE - 1000, "14.2"),
+        envItem("extHumid", BASE - 1000, "78")
+    ]);
+    check("15) idade segue a mais recente", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 1s");
+    env.tick(now + 4000);
+    check("15) contador avança", env.envText("envUpdated"),
+        "Temp/umid atualizadas há 5s");
+}
+
+// Teste 16 — dados ambientais não alteram a parte elétrica.
+{
+    const now = BASE + 30000;
+    const env = createEnv(now);
+    env.fire([
+        envItem("intTemp", BASE, "23.4"),
+        envItem("intHumid", BASE, "50"),
+        item("rede_disponivel", "timeseries", BASE, "1"),
+        item("last_alive", "attribute", BASE, BASE / 1000),
+        item("uptime_s", "attribute", BASE, "8345")
+    ]);
+    check("16) led rede verde", env.ledClass("ledRede"), "led green");
+    check("16) Atualizado há inalterado", env.lastAliveText(), "30s");
+    check("16) uptime inalterado", env.uptimeText(), "2h 19min");
+    check("16) ambiental exibido", env.envText("envTempInt"), "23.4 °C");
 }
 
 console.log("");
